@@ -42,50 +42,50 @@ kernel void debayer(global uchar* restrict in, global uchar4* restrict out, int 
 		#pragma unroll 4
 		for (unsigned int i = 0; i < WIDTH; i += 1) {
 			uchar4 dest;
-			// (x,y) is the center location
-			int x = i, y = j + 2;
+			// (0,2) is the center location
 			// Debayer algorithm starts here
 			int r, g, b;
 			float s1 = 0.0f, s2 = 0.0f, s3 = 0.0f, s4 = 0.0f, s5 = 0.0f, s6 = 0.0f; 
-			s1 = PW(im_reg, x-2, y) + PW(im_reg, x+2, y);
-			s2 = PW(im_reg, x, y-2) + PW(im_reg, x, y+2);
-			s3 = PW(im_reg, x-1, y) + PW(im_reg, x+1, y);
-			s4 = PW(im_reg, x, y-1) + PW(im_reg, x, y+1);
-			s5 = PW(im_reg, x-1, y-1) + PW(im_reg, x+1, y-1) + PW(im_reg, x-1, y+1) + PW(im_reg, x+1, y+1);
-			s6 = PW(im_reg, x, y);
+			// Somehow MACRO didnt work...
+			s1 = im_reg[2*WIDTH-2] + im_reg[2*WIDTH+2];
+			s2 = im_reg[0] + im_reg[4*WIDTH];
+			s3 = im_reg[2*WIDTH - 1] + im_reg[2*WIDTH+1];
+			s4 = im_reg[WIDTH] + im_reg[3*WIDTH];
+			s5 = im_reg[WIDTH-1] + im_reg[WIDTH+1] + im_reg[3*WIDTH-1] + im_reg[3*WIDTH + 1];
+			s6 = im_reg[2*WIDTH];
 
 			float filter_a = fs1_a*s1 + fs2_a*s2 + fs3_a*s3 + fs4_a*s4 + 0.0f     + fs6_a*s6;
 			float filter_b = fs1_b*s1 + fs2_b*s2 + fs3_b*s3 + 0        + fs5_b*s5 + fs6_b*s6;
 			float filter_c = fs1_c*s1 + fs2_c*s2 + 0        + fs4_c*s4 + fs5_c*s5 + fs6_c*s6;
 			float filter_d = fs1_d*s1 + fs2_d*s2 + 0 + 0 + fs5_d*s5 + fs6_d*s6;
 
-			if (((x + offset_x) % 2 == 0) && ((y + offset_y) % 2 == 0)) { // 0,0
+			if (((i + offset_x) % 2 == 0) && ((j + offset_y) % 2 == 0)) { // 0,0
 				dest.w = (uchar)s6;
 				dest.x = (uchar)(filter_a > 0 ? filter_a > 255.0 ? 255.0 : filter_a : 0);
 				dest.y = (uchar)(filter_d > 0 ? filter_d > 255.0 ? 255.0 : filter_d : 0);
 				dest.z = 0;
 			}
-			else if (((x + offset_x) % 2 == 1) && ((y + offset_y) % 2 == 0)) { // 1,0
+			else if (((i + offset_x) % 2 == 1) && ((j + offset_y) % 2 == 0)) { // 1,0
 				dest.x = (uchar)s6;
 				dest.w = (uchar)(filter_b > 0 ? filter_b > 255.0 ? 255.0 : filter_b : 0);
 				dest.y = (uchar)(filter_c > 0 ? filter_c > 255.0 ? 255.0 : filter_c : 0);
 				dest.z = 0;
 			}
-			else if (((x + offset_x) % 2 == 0) && ((y + offset_y) % 2 == 1)) { // 0,1
+			else if (((i + offset_x) % 2 == 0) && ((j + offset_y) % 2 == 1)) { // 0,1
 				dest.x = (uchar)s6;
 				dest.w = (uchar)(filter_c > 0 ? filter_c > 255.0 ? 255.0 : filter_c : 0);
 				dest.y = (uchar)(filter_b > 0 ? filter_b > 255.0 ? 255.0 : filter_b : 0);
 				dest.z = 0;
 			}
-			else {
+			else { // 1,1
 				dest.y = (uchar)s6;
 				dest.w = (uchar)(filter_d > 0 ? filter_d > 255.0 ? 255.0 : filter_d : 0);
-				dest.y = (uchar)(filter_a > 0 ? filter_a > 255.0 ? 255.0 : filter_a : 0);
+				dest.x = (uchar)(filter_a > 0 ? filter_a > 255.0 ? 255.0 : filter_a : 0);
 				dest.z = 0;
 			}
 			
 			// output indices
-			int dest_loc  = j*(outstride/3) + i;
+			int dest_loc  = j*WIDTH + i;
 			out[dest_loc] = dest;
 			#pragma unroll
 			for (unsigned int i_shift = 0; i_shift < SHIFT_REG_SIZE - 1; ++i_shift) {
