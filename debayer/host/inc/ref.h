@@ -5,7 +5,7 @@
 #include <CL/opencl.h>
 
 #define PO(image, x, y, W) ((image)[y*W + x])
-#define P(image, x, y, W, H) ((image)[( (y)>=H ? H-1 : ((y)<0 ? 0:(y)) )*(W)+(             (x)>=W ? W-1 : ((x)<0 ? 0 : (x)) )])
+#define P(image, x, y, W, H) ((image)[( (y)>=H ? H-1 : ((y)<0 ? 0:(y)) )*(W)+((x)>=W ? W-1 : ((x)<0 ? 0 : (x)) )])
 #define PW(image, x, y) P(image, x, y, WIDTH, HEIGHT)
 
 const int WIDTH = 1280;

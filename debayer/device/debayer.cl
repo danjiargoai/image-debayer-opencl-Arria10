@@ -5,32 +5,28 @@
 #define HEIGHT 800
 #endif
 #define WINDOW_SIZE 5
-#ifndef UNROLLTIMES
-#define UNROLLTIMES 64
+#ifndef UNROLL_DEBAYER
+#define UNROLL_DEBAYER 32
+#endif
+#ifndef UNROLL_RECT
+#define UNROLL_RECT 16
 #endif
 
 #define PO(image, x, y, W) ((image)[y*W+x])
 #define P(image, x, y, W, H) ((image)[(y >= H ? H - 1 : y < 0 ? 0 : y) * W + (x >= W ? W - 1 : x < 0 ? 0 : x)])
 #define PW(image, x, y) P(image, x, y, WIDTH, HEIGHT)
 
-kernel void debayer(global uchar* restrict in, global uchar4* restrict out, int outstride, uchar offset_x, uchar offset_y) {
+__kernel void debayer(__global uchar* restrict in, __global uchar4* restrict out, //input and output
+					int outstride, uchar offset_x, uchar offset_y) {
     // Create shift register
     #define SHIFT_REG_SIZE (WINDOW_SIZE-1)*WIDTH+1
-    private uchar im_reg[SHIFT_REG_SIZE];
-    
+    __private uchar im_reg[SHIFT_REG_SIZE];
+
     // Initialize shift register to all 0s
     #pragma unroll
     for (unsigned int i = 0; i < SHIFT_REG_SIZE; ++i) {
         im_reg[i] = 0;
     }
-
-    //for (unsigned int y = 0; y < 2; ++y) {
-    //  // Would be accessing WIDTH*8 bits of data
-    //  #pragma unroll
-    //  for (unsigned int x = 0; x < WIDTH; ++x) {
-    //      im_reg[(2 + y) * WIDTH + x] = PO(in, x, y, WIDTH);
-    //  }
-    //}
 
     #pragma unroll
     for (unsigned int m = 0; m < 2*WIDTH + 1; ++m) {
@@ -38,6 +34,7 @@ kernel void debayer(global uchar* restrict in, global uchar4* restrict out, int 
     }
     const unsigned int start_pos = 2*WIDTH + 1;
     
+    // Filter values
     const float fs1_a = -0.125f, fs1_b = -0.125f,  fs1_c =  0.0625f, fs1_d = -0.1875f;
     const float fs2_a = -0.125f, fs2_b =  0.0625f, fs2_c = -0.125f , fs2_d = -0.1875f;
     const float fs3_a =  0.25f , fs3_b =  0.5f;
@@ -45,10 +42,11 @@ kernel void debayer(global uchar* restrict in, global uchar4* restrict out, int 
     const float fs5_b = -0.125f, fs5_c = -0.125f, fs5_d =  0.25f;
     const float fs6_a = 0.5f , fs6_b = 0.625f, fs6_c = 0.625f, fs6_d = 0.75f;
 
+	// Debayer start here
     for (unsigned int j = 0; j < HEIGHT; j += 1) {
         bool j_0 = (j & 0x1) ^ (offset_y & 0x1);
         // Number of operations. Largely depends on device resource
-        #pragma unroll UNROLLTIMES
+        #pragma unroll UNROLL_DEBAYER
         for (unsigned int i = 0; i < WIDTH; i += 1) {
             #pragma pipeline
             uchar4 dest;
@@ -111,4 +109,26 @@ kernel void debayer(global uchar* restrict in, global uchar4* restrict out, int 
             im_reg[SHIFT_REG_SIZE-1] = in[start_pos + j*WIDTH + i];
         }
     }
+}
+
+// This is still WIP
+__kernel void bilinear_rectification(__global uchar4* restrict in, __global uchar4* restrict out,
+								   __constant short2* restrict indices, __constant ushort4* restrict weights,
+								   int stride) {
+	for (unsigned j = 0; j < HEIGHT; j += 1) {
+		#pragma unroll UNROLL_RECT
+		for (unsigned i = 0; i < WIDTH; i += 1) {
+			int index = j * WIDTH + i;
+			int offset = indices[index].s1 * stride + indices[index].s0;
+			uchar4 pix00 = in[offset];
+			uchar4 pix10 = in[offset + 1];
+			uchar4 pix01 = in[offset + stride];
+			uchar4 pix11 = in[offset + stride + 1];
+			ushort4 weight = weights[index];
+			out[index].w = pix00.w * weight.w + pix10.w * weight.x + pix01.w * weight.y + pix11.w * weight.z;
+			out[index].x = pix00.x * weight.w + pix10.x * weight.x + pix01.x * weight.y + pix11.x * weight.z;
+			out[index].y = pix00.y * weight.w + pix10.y * weight.x + pix01.y * weight.y + pix11.y * weight.z;
+			out[index].z = 0;
+		}
+	}
 }
